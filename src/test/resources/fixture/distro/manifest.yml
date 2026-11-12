@@ -5,12 +5,12 @@ info:
   name: fixture-distro
   version: 1.0.0-SNAPSHOT
 
-apps: [alpha, beta]
+apps: [alpha, beta, keycloak]
 integrations: [alpha-beta]
-modes: {sso: true, backup: true}
+addons: {}
 db-init: [alpha, beta, keycloak]
 
-# The ordered -f chain for 'run'
+# The ordered -f chain for 'up'
 compose-files:
   - other/init.yml
   - other/mysql.yml
@@ -18,23 +18,21 @@ compose-files:
   - apps/alpha.yml
   - c2c/alpha-tuning.yml
   - apps/beta.yml
-  - integrations/alpha-beta.yml
   - sso/keycloak.yml
-  - support/backup.yml
+  - integrations/alpha-beta.yml
   - sso/alpha.yml
 
-# The pre-computed restore invocation: 'run' chain + these files,
+# The pre-computed restore invocation: 'up' chain + these files,
 # with these restore gate profiles active
 restore:
   compose-files:
     - support/restore.yml
     - support/backup.yml
     - sso/restore.yml
-  profiles: [keycloak-restore, alpha-restore]
+  profiles: [alpha-restore, keycloak-restore]
 
-# Ad-hoc chains: 'up <mode>' runs the base + the mode's files
-mode-chains:
-  sso: [other/init.yml, other/postgresql.yml, sso/keycloak.yml]
-  backup: [other/init.yml, support/backup.yml]
-  extra: [other/init.yml, support/extra.yml, sso/extra-sso.yml]
-  c2c-maintenance: [other/init.yml, c2c/maintenance.yml]
+# The ad-hoc chain the 'backup' command runs on a live stack
+backup:
+  compose-files:
+    - other/init.yml
+    - support/backup.yml

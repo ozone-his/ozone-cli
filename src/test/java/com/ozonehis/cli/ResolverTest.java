@@ -44,9 +44,9 @@ class ResolverTest {
         return new Resolver(model, selection, composeRoot, distroDir).resolve();
     }
 
-    private Selection selection(String appsYaml, String modesYaml) throws IOException {
-        String yaml = "selection:\n  apps:\n" + appsYaml + "\n  modes:\n"
-                + modesYaml.replaceAll("(?m)^", "  ") + "\n";
+    private Selection selection(String appsYaml, String addonsYaml) throws IOException {
+        String yaml = "selection:\n  apps:\n" + appsYaml + "\n  addons:\n"
+                + addonsYaml.replaceAll("(?m)^", "  ") + "\n";
         File file = File.createTempFile("ozone", ".yml");
         java.nio.file.Files.write(file.toPath(), yaml.getBytes(java.nio.charset.StandardCharsets.UTF_8));
         file.deleteOnExit();
@@ -55,9 +55,9 @@ class ResolverTest {
 
     @Test
     void resolvesTheExpectedChainForASelection() throws IOException {
-        Plan plan = resolve(selection("  - alpha\n  - beta", "  sso: true\n  backup: true"));
+        Plan plan = resolve(selection("  - alpha\n  - beta\n  - keycloak", ""));
 
-        assertEquals(Arrays.asList("alpha", "beta"), plan.apps);
+        assertEquals(Arrays.asList("alpha", "beta", "keycloak"), plan.apps);
         assertEquals(Arrays.asList("alpha-beta"), plan.integrations);
         assertEquals(Arrays.asList(
                 "other/init.yml",
@@ -65,9 +65,8 @@ class ResolverTest {
                 "other/postgresql.yml",
                 "apps/alpha.yml",
                 "apps/beta.yml",
-                "integrations/alpha-beta.yml",
                 "sso/keycloak.yml",
-                "support/backup.yml",
+                "integrations/alpha-beta.yml",
                 "sso/alpha.yml"), plan.chain);
         assertEquals(Arrays.asList("alpha", "beta", "keycloak"), plan.dbInit);
         assertTrue(plan.ssoEnabled());
@@ -75,7 +74,7 @@ class ResolverTest {
 
     @Test
     void omitsDatabasesNoSelectedEntryRequires() throws IOException {
-        Plan plan = resolve(selection("  - beta", "  backup: true"));
+        Plan plan = resolve(selection("  - beta", ""));
         assertFalse(plan.chain.contains("other/mysql.yml"));
         assertTrue(plan.chain.contains("other/postgresql.yml"));
         assertEquals(Arrays.asList(), plan.integrations); // alpha not selected: not activated
@@ -84,65 +83,62 @@ class ResolverTest {
     @Test
     void rejectsUnknownApps() {
         IOException e = assertThrows(IOException.class, () ->
-                resolve(selection("  - alpha\n  - nope", "  backup: true")));
+                resolve(selection("  - alpha\n  - nope", "")));
         assertTrue(e.getMessage().contains("unknown app 'nope'"), e.getMessage());
     }
 
     @Test
     void rejectsIntegrationsListedInSelection() {
         IOException e = assertThrows(IOException.class, () ->
-                resolve(selection("  - alpha\n  - alpha-beta", "  backup: true")));
+                resolve(selection("  - alpha\n  - alpha-beta", "")));
         assertTrue(e.getMessage().contains("is an integration"), e.getMessage());
     }
 
     @Test
     void rejectsIncompatiblePairs() {
         IOException e = assertThrows(IOException.class, () ->
-                resolve(selection("  - alpha\n  - gamma", "  backup: true")));
+                resolve(selection("  - alpha\n  - gamma", "")));
         assertTrue(e.getMessage().contains("incompatible"), e.getMessage());
     }
 
     @Test
     void rejectsMissingDbInitDirs() {
         IOException e = assertThrows(IOException.class, () ->
-                resolve(selection("  - gamma", "  backup: true")));
+                resolve(selection("  - gamma", "")));
         assertTrue(e.getMessage().contains("db-init"), e.getMessage());
     }
 
     @Test
-    void nonTrueModeValuesAreNotEnabled() throws IOException {
-        // 'true0' is a typo, not a boolean: the mode must stay disabled.
-        Plan plan = resolve(selection("  - alpha", "  backup: true0"));
-        assertFalse(plan.chain.contains("support/backup.yml"), plan.chain.toString());
+    void nonTrueAddonValuesAreNotEnabled() throws IOException {
+        // 'true0' is a typo, not a boolean: the addon must stay disabled.
+        Plan plan = resolve(selection("  - alpha", "  extra: true0"));
+        assertFalse(plan.chain.contains("support/extra.yml"), plan.chain.toString());
     }
 
     @Test
-    void enabledModesContributeTheirSsoOverridesToTheRunChain() throws IOException {
-        Plan plan = resolve(selection("  - alpha", "  sso: true\n  extra: true"));
+    void enabledAddonsContributeTheirSsoOverridesToTheChain() throws IOException {
+        Plan plan = resolve(selection("  - alpha\n  - keycloak", "  extra: true"));
         assertTrue(plan.chain.contains("support/extra.yml"), plan.chain.toString());
         assertTrue(plan.chain.contains("sso/extra-sso.yml"), plan.chain.toString());
     }
 
     @Test
     void computesTheRestorePlan() throws IOException {
-        Plan plan = resolve(selection("  - alpha", "  sso: true"));
+        Plan plan = resolve(selection("  - alpha\n  - keycloak", ""));
         assertEquals(Arrays.asList("support/restore.yml", "support/backup.yml", "sso/restore.yml"),
                 plan.restoreCompose);
-        assertEquals(Arrays.asList("keycloak-restore", "alpha-restore"), plan.restoreProfiles);
+        assertEquals(Arrays.asList("alpha-restore", "keycloak-restore"), plan.restoreProfiles);
     }
 
     @Test
-    void computesAdHocModeChains() throws IOException {
-        Plan plan = resolve(selection("  - alpha", "  sso: true"));
-        assertEquals(Arrays.asList("other/init.yml", "support/backup.yml"), plan.modeChains.get("backup"));
-        assertEquals(Arrays.asList("other/init.yml", "other/postgresql.yml", "sso/keycloak.yml"),
-                plan.modeChains.get("sso"));
-        assertFalse(plan.modeChains.containsKey("restore"));
+    void computesTheBackupChain() throws IOException {
+        Plan plan = resolve(selection("  - alpha\n  - keycloak", ""));
+        assertEquals(Arrays.asList("other/init.yml", "support/backup.yml"), plan.backupChain);
     }
 
     @Test
     void overlayAddsNewAppWithDistroRelativeFiles() throws IOException {
-        Plan plan = resolve(modelWithOverlay(), selection("  - alpha\n  - c2c-connector", "  sso: true"));
+        Plan plan = resolve(modelWithOverlay(), selection("  - alpha\n  - c2c-connector\n  - keycloak", ""));
         assertTrue(plan.apps.contains("c2c-connector"), plan.apps.toString());
         assertTrue(plan.chain.contains("c2c/connector.yml"), plan.chain.toString());
         assertTrue(plan.chain.contains("c2c/redis.yml"), plan.chain.toString()); // overlay-declared engine
@@ -151,7 +147,7 @@ class ResolverTest {
 
     @Test
     void overlayAppendsFilesAfterTheBaseFilesOfExistingEntries() throws IOException {
-        Plan plan = resolve(modelWithOverlay(), selection("  - alpha", "  sso: true"));
+        Plan plan = resolve(modelWithOverlay(), selection("  - alpha\n  - keycloak", ""));
         List<String> chain = plan.chain;
         assertTrue(chain.contains("c2c/alpha-tuning.yml"), chain.toString());
         assertTrue(chain.indexOf("apps/alpha.yml") < chain.indexOf("c2c/alpha-tuning.yml"), chain.toString());
@@ -165,15 +161,14 @@ class ResolverTest {
     @Test
     void overlayIncompatibilitiesAreEnforced() {
         IOException e = assertThrows(IOException.class, () ->
-                resolve(modelWithOverlay(), selection("  - beta\n  - c2c-connector", "  sso: true")));
+                resolve(modelWithOverlay(), selection("  - beta\n  - c2c-connector", "")));
         assertTrue(e.getMessage().contains("incompatible"), e.getMessage());
     }
 
     @Test
-    void overlayAddsModesToTheChains() throws IOException {
+    void overlayAddsAddonsToTheChain() throws IOException {
         Plan plan = resolve(modelWithOverlay(), selection("  - alpha", "  c2c-maintenance: true"));
         assertTrue(plan.chain.contains("c2c/maintenance.yml"), plan.chain.toString());
-        assertTrue(plan.modeChains.containsKey("c2c-maintenance"), plan.modeChains.keySet().toString());
     }
 
     @Test

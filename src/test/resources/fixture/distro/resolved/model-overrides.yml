@@ -17,7 +17,7 @@ apps:
     - C2C_USER
 databases:
   redis: c2c/redis.yml
-modes:
+addons:
   c2c-maintenance:
     compose:
     - c2c/maintenance.yml

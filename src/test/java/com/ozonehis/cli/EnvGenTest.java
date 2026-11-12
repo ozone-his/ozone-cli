@@ -103,9 +103,9 @@ class EnvGenTest {
 
     @Test
     void doesNotFlattenNamedBlocksCollidingWithSubBlockNames() throws IOException {
-        // The section child named 'sso' (modes.sso) is the sso mode block,
-        // not a section-level sso sub-block: its own keys must never leak
-        // into the .env as flattened 'configs'/'paths' values.
+        // The named block apps.keycloak carries the Keycloak configs; its
+        // own keys must never leak into the .env as flattened 'configs'/'paths'
+        // values.
         Map<String, String> env = generate(true);
         assertFalse(env.containsKey("configs"));
         assertFalse(env.containsKey("paths"));

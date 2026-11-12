@@ -9,15 +9,15 @@ The new pattern, in one line: the distro declares a single `ozone.yml` at its
 root with `selection:`, `vars:` and `model-overrides:` sections; the build
 (`ozone resolve`, wired via `maven-parent`) flattens the inheritance chain into
 `resolved/` plus `resolved/info.yml`; deployment runs the `ozone`
-command, which prints the exact `docker compose ...` command. See
-`README.md` in this module for the full model.
+command, which runs the exact `docker compose ...` command (or prints it with
+`--print`). See `README.md` in this repo for the full model.
 
 ## Old vs new
 
 | Old mechanism | Old file | New equivalent |
 |---|---|---|
-| Start script | `scripts/start-ozone.sh` (run from `run/docker/scripts`) | `ozone --compose-root <run/docker> --distro <distro dir> --hostname <h> run` - prints the command to paste |
-| Compose file list | `scripts/docker-compose-files.txt` | `ozone.yml` `selection:` section (apps + modes); the compose file chain and profiles are computed from the compose model |
+| Start script | `scripts/start-ozone.sh` (run from `run/docker/scripts`) | `ozone --compose-root <run/docker> --distro <distro dir> --hostname <h> up` - runs the stack (add `--print` to only print the command) |
+| Compose file list | `scripts/docker-compose-files.txt` | `ozone.yml` `selection:` section (apps + addons); the compose file chain and profiles are computed from the compose model |
 | Distro env vars | `scripts/distro-<name>.env`, merged into `concatenated.env` at build time | `ozone.yml` `vars:` section, merged over the parent's `resolved/vars.yml` at build time |
 | Compose override file | `scripts/docker-compose-<x>-overrides.yml`, appended to the `-f` chain | keep the file inside the distro and declare it in `ozone.yml` `model-overrides:` section (path relative to the distro dir); partial service tweaks (volumes, command, labels, extra env) stay in that compose file |
 | Database init list | env list consumed by `data/mysql/create_db.sh` / `data/postgresql/create_db.sh` (`DB_INIT_LIST`) | the compose model's `db-init` per app; the CLI computes `DB_INIT_LIST` from the selection - no distro-side list needed |
@@ -29,11 +29,12 @@ command, which prints the exact `docker compose ...` command. See
    your own `<name>`, `<version>` and `<description>` (the description is
    recorded in `info.yml` - if omitted, Maven inherits the parent's).
 2. **Create `ozone.yml` at the distro root** with:
-   - `selection:` - the apps and modes you run (converted from
-     `docker-compose-files.txt`; note the selection *replaces* the parent's
-     wholesale - disabling a service means omitting it here).
+   - `selection:` - the apps you select and the addons you enable (converted
+     from `docker-compose-files.txt`; note the selection *replaces* the
+     parent's wholesale - disabling a service means omitting it here). SSO is
+     the `keycloak` app: list it under `apps:`.
    - `vars:` - your env values (converted from `distro-<name>.env`), in
-     blocks mirroring the model (apps / integrations / modes / databases).
+     blocks mirroring the model (apps / integrations / addons / databases).
      `paths:` values are relative to the distro dir. Do not patch the
      `env-substitution` service to inject values - put them under `vars:`.
    - `model-overrides:` - compose additions only (additive; never removes).
@@ -52,12 +53,14 @@ command, which prints the exact `docker compose ...` command. See
    Nothing is generated in the source tree; `resolved/`, `.env`, `manifest.yml`
    are gitignored.
 6. **Deploy**: from the unpacked artifact, put the CLI on your PATH and run
-   the bundled launcher, then paste the printed multi-line command:
+   the bundled launcher:
    `. ./bin/ozone-path.sh` (in fish: `source ./bin/ozone-path.fish`; or simply
    `export PATH="$PWD/bin:$PATH"`), then
-   `ozone --compose-root run/docker --distro distro --hostname <host> run`.
+   `ozone --compose-root run/docker --distro distro --hostname <host> up`
+   (add `--print` to only print the multi-line command and paste it yourself).
    (`java -jar bin/cli.jar ...` works too.) `HOST_NAME` and `DISTRO_PATH` are
-   provided by that command, never stored in files.
+   provided by that command, never stored in files. Use `info` to re-print the
+   services and credentials later.
 
 ## Merge rules to know before editing vars or overrides
 
@@ -69,7 +72,7 @@ conflicts fail the build loudly. At deployment the CLI reads only
 
 - Build succeeds and `target/<artifactId>-<version>/distro/resolved/info.yml`
   shows your artifactId, version and description.
-- `ozone ... validate` prints the selection check; `run` prints the full
+- `ozone ... validate` prints the selection check; `up --print` prints the full
   command with the expected `-f` chain and `--profile` list (compare against
   your old `docker-compose-files.txt`).
 - `DB_INIT_LIST` behavior unchanged: databases initialize per the model's

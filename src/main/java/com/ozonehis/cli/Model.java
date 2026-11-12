@@ -24,7 +24,10 @@ final class Model {
 
     final Map<String, Entry> apps = new LinkedHashMap<String, Entry>();
     final Map<String, Entry> integrations = new LinkedHashMap<String, Entry>();
-    final Map<String, Entry> modes = new LinkedHashMap<String, Entry>();
+    /** optional stack extras the selection toggles (proxy, logging-agent, demo-data, ...) */
+    final Map<String, Entry> addons = new LinkedHashMap<String, Entry>();
+    /** operations the CLI runs as commands (backup, restore) */
+    final Map<String, Entry> operations = new LinkedHashMap<String, Entry>();
 
     /** pairs of app names that cannot be selected together */
     final List<String[]> incompatibilities = new ArrayList<String[]>();
@@ -42,7 +45,7 @@ final class Model {
     /** compose files declared by the distro's model-overrides.yml - resolved against the distro dir */
     final Set<String> distroDirFiles = new LinkedHashSet<String>();
 
-    /** One model entry: an app, an integration or a mode. */
+    /** One model entry: an app, an integration, an addon or an operation. */
     static final class Entry {
 
         String name;
@@ -55,7 +58,7 @@ final class Model {
         final List<String> db = new ArrayList<String>();
         String url;
         final List<String> credentials = new ArrayList<String>();
-        /** e.g. demo-data's `sso-users:` - the Keycloak users a mode provisions */
+        /** e.g. demo-data's `sso-users:` - the Keycloak users an addon provisions */
         String ssoUsers;
     }
 
@@ -74,7 +77,8 @@ final class Model {
 
         model.fill(model.apps, Yamls.map(root.get("apps")), false);
         model.fill(model.integrations, Yamls.map(root.get("integrations")), false);
-        model.fill(model.modes, Yamls.map(root.get("modes")), false);
+        model.fill(model.addons, Yamls.map(root.get("addons")), false);
+        model.fill(model.operations, Yamls.map(root.get("operations")), false);
 
         addIncompatibilities(model.incompatibilities, root.get("incompatibilities"));
 
@@ -86,11 +90,11 @@ final class Model {
     /**
      * Merges the distro's optional model-overrides.yml into this model.
      * The overlay is strictly additive: new entries (apps, integrations,
-     * modes, database engines, incompatibility pairs, deployment knobs)
-     * are added; on existing entries list fields are appended and declared
-     * scalars (url, sso-users, a database engine's file) are overridden
-     * with the child's value. Nothing can be removed - disabling a service
-     * is done in selection.yml.
+     * addons, operations, database engines, incompatibility pairs,
+     * deployment knobs) are added; on existing entries list fields are
+     * appended and declared scalars (url, sso-users, a database engine's
+     * file) are overridden with the child's value. Nothing can be removed -
+     * disabling a service is done in the selection.
      */
     void mergeOverlay(Map<String, Object> overlay) throws IOException {
         for (String file : Yamls.stringList(Yamls.map(overlay.get("base")).get("compose"))) {
@@ -106,7 +110,8 @@ final class Model {
 
         fill(apps, Yamls.map(overlay.get("apps")), true);
         fill(integrations, Yamls.map(overlay.get("integrations")), true);
-        fill(modes, Yamls.map(overlay.get("modes")), true);
+        fill(addons, Yamls.map(overlay.get("addons")), true);
+        fill(operations, Yamls.map(overlay.get("operations")), true);
 
         addIncompatibilities(incompatibilities, overlay.get("incompatibilities"));
 

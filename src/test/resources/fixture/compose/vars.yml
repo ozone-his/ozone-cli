@@ -7,7 +7,6 @@ apps:
       ALPHA_DB: alphadb
     sso:
       ALPHA_CLIENT_SECRET: code-level-secret
-modes:
-  sso:
+  keycloak:
     configs:
       KEYCLOAK_USER: kcadmin

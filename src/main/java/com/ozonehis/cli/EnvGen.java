@@ -84,12 +84,11 @@ final class EnvGen {
     }
 
     /**
-     * vars.yml owners: apps / integrations / modes / databases / restic.
+     * vars.yml owners: apps / integrations / addons / databases.
      * Each section holds named blocks (e.g. apps.openmrs), each block with
      * configs / paths (always merged) and sso (merged only when SSO is
      * enabled). A section may also carry configs / paths directly, e.g. the
-     * shared databases paths - but not sso: a section child named 'sso' is
-     * the sso mode block, a named block, not an sso sub-block.
+     * shared databases paths.
      */
     private void mergeOwnerBlocks(Map<String, String> env, Map<String, Object> vars, boolean override) {
         for (Map.Entry<String, Object> section : vars.entrySet()) {

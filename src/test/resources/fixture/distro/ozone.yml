@@ -4,10 +4,7 @@ selection:
   apps:
     - alpha
     - beta
-  
-  modes:
-    sso: true
-    backup: true
+    - keycloak
 
 vars:
   # Fixture distro-level overrides
@@ -38,7 +35,7 @@ model-overrides:
   databases:
     redis: c2c/redis.yml
   
-  modes:
+  addons:
     c2c-maintenance:
       compose: [c2c/maintenance.yml]
   

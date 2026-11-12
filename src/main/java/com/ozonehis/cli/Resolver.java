@@ -10,7 +10,7 @@ import java.util.Set;
 /**
  * Validates a selection against the model and resolves the plan: the
  * ordered compose chain, the db-init list, the restore invocation and the
- * per-mode ad-hoc chains. Every rule fails loudly; nothing is guessed.
+ * ad-hoc backup chain. Every rule fails loudly; nothing is guessed.
  */
 final class Resolver {
 
@@ -31,7 +31,7 @@ final class Resolver {
         Plan plan = new Plan();
 
         plan.apps.addAll(selection.apps);
-        plan.modes.putAll(selection.modes);
+        plan.addons.putAll(selection.addons);
 
         // Integrations activate automatically; model order keeps the chain
         // deterministic.
@@ -48,9 +48,9 @@ final class Resolver {
         for (String integrationName : plan.integrations) {
             engines.addAll(model.integrations.get(integrationName).db);
         }
-        for (Model.Entry mode : model.modes.values()) {
-            if (enabledModesOnly().contains(mode.name)) {
-                engines.addAll(mode.db);
+        for (Model.Entry addon : model.addons.values()) {
+            if (enabledAddonsOnly().contains(addon.name)) {
+                engines.addAll(addon.db);
             }
         }
 
@@ -67,9 +67,9 @@ final class Resolver {
         for (String integrationName : plan.integrations) {
             chain.addAll(model.integrations.get(integrationName).compose);
         }
-        for (Model.Entry mode : model.modes.values()) {
-            if (enabledModesOnly().contains(mode.name)) {
-                chain.addAll(mode.compose);
+        for (Model.Entry addon : model.addons.values()) {
+            if (enabledAddonsOnly().contains(addon.name)) {
+                chain.addAll(addon.compose);
             }
         }
         if (plan.ssoEnabled()) {
@@ -79,9 +79,9 @@ final class Resolver {
             for (String integrationName : plan.integrations) {
                 chain.addAll(model.integrations.get(integrationName).sso);
             }
-            for (Model.Entry mode : model.modes.values()) {
-                if (enabledModesOnly().contains(mode.name)) {
-                    chain.addAll(mode.sso);
+            for (Model.Entry addon : model.addons.values()) {
+                if (enabledAddonsOnly().contains(addon.name)) {
+                    chain.addAll(addon.sso);
                 }
             }
         }
@@ -94,62 +94,55 @@ final class Resolver {
         for (String integrationName : plan.integrations) {
             addAll(plan.dbInit, model.integrations.get(integrationName).dbInit);
         }
-        for (Model.Entry mode : model.modes.values()) {
-            if (enabledModesOnly().contains(mode.name)) {
-                addAll(plan.dbInit, mode.dbInit);
+        for (Model.Entry addon : model.addons.values()) {
+            if (enabledAddonsOnly().contains(addon.name)) {
+                addAll(plan.dbInit, addon.dbInit);
             }
         }
         checkDbInitDirs(plan.dbInit);
 
-        // The pre-computed restore invocation.
-        Model.Entry restoreMode = model.modes.get("restore");
-        if (restoreMode != null) {
-            plan.restoreCompose.addAll(restoreMode.compose);
-        }
-        if (plan.ssoEnabled()) {
-            Model.Entry ssoMode = model.modes.get("sso");
-            if (ssoMode != null) {
-                plan.restoreCompose.addAll(ssoMode.restoreCompose);
-                addAll(plan.restoreProfiles, ssoMode.restoreProfiles);
-            }
+        // The pre-computed restore invocation: the restore operation's files,
+        // plus every selected app's restore files and gate profiles (the
+        // keycloak app carries the SSO restore files).
+        Model.Entry restoreOp = model.operations.get("restore");
+        if (restoreOp != null) {
+            plan.restoreCompose.addAll(restoreOp.compose);
         }
         for (String appName : selection.apps) {
-            addAll(plan.restoreProfiles, model.apps.get(appName).restoreProfiles);
+            Model.Entry app = model.apps.get(appName);
+            addAll(plan.restoreCompose, app.restoreCompose);
+            addAll(plan.restoreProfiles, app.restoreProfiles);
         }
         dedupe(plan.restoreCompose);
         checkFilesExist(plan.restoreCompose);
 
-        // Pre-computed ad-hoc chains for every invocable mode (`up <mode>`):
-        // base + the mode's files + its databases + its sso override when sso
-        // is enabled in the selection.
-        for (Model.Entry mode : model.modes.values()) {
-            if ("restore".equals(mode.name)) {
-                continue;
-            }
-            List<String> modeChain = new ArrayList<String>();
-            modeChain.addAll(model.baseCompose);
+        // The pre-computed ad-hoc chain for the `backup` command:
+        // base + the backup operation's databases + its files + its sso
+        // override when SSO is enabled in the selection.
+        Model.Entry backupOp = model.operations.get("backup");
+        if (backupOp != null) {
+            plan.backupChain.addAll(model.baseCompose);
             for (String engine : model.databases.keySet()) {
-                if (mode.db.contains(engine)) {
-                    modeChain.add(model.databases.get(engine));
+                if (backupOp.db.contains(engine)) {
+                    plan.backupChain.add(model.databases.get(engine));
                 }
             }
-            modeChain.addAll(mode.compose);
+            plan.backupChain.addAll(backupOp.compose);
             if (plan.ssoEnabled()) {
-                modeChain.addAll(mode.sso);
+                plan.backupChain.addAll(backupOp.sso);
             }
-            dedupe(modeChain);
-            checkFilesExist(modeChain);
-            plan.modeChains.put(mode.name, modeChain);
+            dedupe(plan.backupChain);
+            checkFilesExist(plan.backupChain);
         }
 
         return plan;
     }
 
-    private Set<String> enabledModesOnly() {
+    private Set<String> enabledAddonsOnly() {
         Set<String> enabled = new LinkedHashSet<String>();
-        for (Model.Entry mode : model.modes.values()) {
-            if (selection.modeEnabled(mode.name)) {
-                enabled.add(mode.name);
+        for (Model.Entry addon : model.addons.values()) {
+            if (selection.addonEnabled(addon.name)) {
+                enabled.add(addon.name);
             }
         }
         return enabled;
@@ -160,17 +153,17 @@ final class Resolver {
             if (model.integrations.containsKey(appName)) {
                 throw new IOException("Selection error: '" + appName + "' is an integration; integrations "
                         + "activate automatically when their required apps are selected and are never listed "
-                        + "in selection.yml");
+                        + "in the selection");
             }
             if (!model.apps.containsKey(appName)) {
                 throw new IOException("Selection error: unknown app '" + appName + "'. Valid apps: "
                         + model.apps.keySet());
             }
         }
-        for (String modeName : selection.modes.keySet()) {
-            if (!model.modes.containsKey(modeName)) {
-                throw new IOException("Selection error: unknown mode '" + modeName + "'. Valid modes: "
-                        + model.modes.keySet());
+        for (String addonName : selection.addons.keySet()) {
+            if (!model.addons.containsKey(addonName)) {
+                throw new IOException("Selection error: unknown addon '" + addonName + "'. Valid addons: "
+                        + model.addons.keySet());
             }
         }
         for (String[] pair : model.incompatibilities) {

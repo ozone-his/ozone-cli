@@ -22,10 +22,10 @@ import org.w3c.dom.NodeList;
 
 /**
  * The Ozone CLI (command 'ozone') - assembles the Docker Compose command of an Ozone distribution
- * from the compose project's model and the distro's selection. Prints the
- * commands; never runs them. Generates the manifest and the .env files.
- * The 'resolve' command is the distro build's inheritance step: it merges
- * the parent distro's resolved chain with this distro's own ozone.yml sections
+ * from the compose project's model and the distro's selection. Runs the commands (up, down,
+ * backup, restore) unless --print is given, in which case it only prints them. Generates the
+ * manifest and the .env files. The 'resolve' command is the distro build's inheritance step:
+ * it merges the parent distro's resolved chain with this distro's own ozone.yml sections
  * and records the distro's identity as resolved/info.yml.
  */
 public final class OzoneCli {
@@ -34,23 +34,24 @@ public final class OzoneCli {
             + "                    [--project-name <n>] [--project-version <v>] [--project-description <d>]\n"
             + "       ozone --compose-root <dir> --distro <dir> [--hostname <h>]\n"
             + "                    [--scheme <http|https>] [--env-file <path>] [--manifest <path>]\n"
-            + "                    [--no-credentials] <run | up [mode] | down | restore | validate | manifest>\n"
+            + "                    [--no-credentials] [--print] <up | down | backup | restore | validate | manifest | info>\n"
             + "\n"
             + "  --compose-root  required (except for resolve): the Docker Compose project location.\n"
             + "  --distro        required (except for resolve): the distro location.\n"
-            + "  --hostname      required for run/up/restore/down: the deployment's hostname,\n"
+            + "  --hostname      required for up/down/backup/restore/info: the deployment's hostname,\n"
             + "                  or the machine's IP for local runs (localhost breaks SSO,\n"
-            + "                  e.g. on macOS). Not required for validate/manifest.\n\n"
+            + "                  e.g. on macOS). Not required for validate/manifest.\n"
+            + "  --print         only print the compose command instead of running it\n\n"
             + "  resolve        build step: resolve the parent distro's resolved files with\n"
             + "                 this distro's own ozone.yml sections into resolved/,\n"
             + "                 and record the --project-* identity as resolved/info.yml\n"
-            + "  run            print the 'docker compose ... up -d' command for the selection\n"
-            + "  up [mode]      same as run; with a mode name, print the ad-hoc chain of that mode\n"
-            + "                (e.g. 'up backup', 'up demo' on a running stack)\n"
-            + "  down           print the 'docker compose ... down' command\n"
-            + "  restore        print the pre-computed restore command\n"
+            + "  up             run 'docker compose ... up -d' for the selection\n"
+            + "  down           run 'docker compose ... down'\n"
+            + "  backup         run the ad-hoc backup chain on the running stack\n"
+            + "  restore        run the pre-computed restore command (run it before 'up')\n"
             + "  validate       run all validation rules, print nothing on success\n"
-            + "  manifest       generate manifest.yml and .env, print the summary\n";
+            + "  manifest       generate manifest.yml and .env, print the summary\n"
+            + "  info           print the services and credentials summary only\n";
 
     private static final String EXAMPLES = "\n"
             + "Examples:\n"
@@ -61,9 +62,11 @@ public final class OzoneCli {
             + "                --project-description 'My distro'\n"
             + "\n"
             + "  # deployment - from an unpacked Ozone artifact:\n"
-            + "  ozone --compose-root run/docker --distro distro --hostname demo.local run\n"
-            + "  ozone --compose-root run/docker --distro distro --hostname demo.local up backup\n"
-            + "  ozone --compose-root run/docker --distro distro --hostname demo.local down\n";
+            + "  ozone --compose-root run/docker --distro distro --hostname demo.local up\n"
+            + "  ozone --compose-root run/docker --distro distro --hostname demo.local up --print\n"
+            + "  ozone --compose-root run/docker --distro distro --hostname demo.local backup --print\n"
+            + "  ozone --compose-root run/docker --distro distro --hostname demo.local down\n"
+            + "  ozone --compose-root run/docker --distro distro --hostname demo.local info\n";
 
     private static final String HELP = USAGE + EXAMPLES;
 
@@ -77,8 +80,8 @@ public final class OzoneCli {
     private File envFile;
     private File manifestFile;
     private boolean printCredentials = true;
+    private boolean printOnly;
     private String command;
-    private String commandArg;
     private File fromDir;
     private File toDir;
     private String projectName;
@@ -106,9 +109,6 @@ public final class OzoneCli {
         }
         parse(args);
         if ("resolve".equals(command)) {
-            if (commandArg != null) {
-                throw new IOException("Unexpected argument: " + commandArg);
-            }
             if (toDir == null) {
                 throw new IOException("Missing --to." + HINT);
             }
@@ -181,9 +181,10 @@ public final class OzoneCli {
 
         // HOST_NAME and DISTRO_PATH are provided by the invocation only -
         // never stored in the portable .env. Refuse the commands that
-        // actually start the stack unless both are known.
-        if (hostname == null && ("run".equals(command) || "up".equals(command)
-                || "restore".equals(command) || "down".equals(command))) {
+        // actually touch the stack unless the hostname is known.
+        if (hostname == null && ("up".equals(command) || "down".equals(command)
+                || "backup".equals(command) || "restore".equals(command)
+                || "info".equals(command))) {
             throw new IOException("--hostname is required for '" + command + "'. Use the deployment's\n"
                     + "hostname, or your machine's IP for local runs; 'localhost' does not work for\n"
                     + "SSO in some environments (e.g. macOS).");
@@ -201,6 +202,13 @@ public final class OzoneCli {
         }
         displayEnv.put("DISTRO_PATH", distroDir.getCanonicalPath());
         displayEnv = EnvGen.substitute(displayEnv);
+
+        if ("info".equals(command)) {
+            // Read-only: prints the services and credentials summary, writes nothing.
+            display.summary(model, plan, displayEnv);
+            return;
+        }
+
         writeEnv(env);
         writeManifest(model, plan, distroInfo);
 
@@ -209,37 +217,60 @@ public final class OzoneCli {
             return;
         }
 
-        // The printed command is ephemeral and necessarily machine-specific
+        // The command is ephemeral and necessarily machine-specific
         // (it points at this machine's compose tree); generated artifacts
         // (.env, manifest.yml) must stay portable, so no paths are baked
         // into them.
-        if ("run".equals(command) || "up".equals(command)) {
-            String name = composeProjectName(distroInfo);
-            List<String> chain = plan.chain;
-            if (commandArg != null) {
-                chain = plan.modeChains.get(commandArg);
-                if (chain == null) {
-                    throw new IOException("Unknown mode '" + commandArg + "'. Valid modes: " + plan.modeChains.keySet());
-                }
-            }
-            display.command(buildCommand(model, name, chain, new ArrayList<String>(), "up -d"));
-            display.summary(model, plan, displayEnv);
+        String name = composeProjectName(distroInfo);
+        if ("up".equals(command)) {
+            runCompose(display, model, name, plan.chain, new ArrayList<String>(), "up -d", displayEnv, plan);
             return;
         }
 
         if ("down".equals(command)) {
-            display.command(buildCommand(model, composeProjectName(distroInfo), plan.chain, new ArrayList<String>(), "down"));
+            runCompose(display, model, name, plan.chain, new ArrayList<String>(), "down", displayEnv, plan);
+            return;
+        }
+
+        if ("backup".equals(command)) {
+            if (plan.backupChain.isEmpty()) {
+                throw new IOException("The model declares no 'backup' operation; nothing to run.");
+            }
+            runCompose(display, model, name, plan.backupChain, new ArrayList<String>(), "up -d", displayEnv, plan);
             return;
         }
 
         if ("restore".equals(command)) {
             List<String> chain = new ArrayList<String>(plan.chain);
             chain.addAll(plan.restoreCompose);
-            display.command(buildCommand(model, composeProjectName(distroInfo), chain, plan.restoreProfiles, "up -d"));
+            runCompose(display, model, name, chain, plan.restoreProfiles, "up -d", displayEnv, plan);
             return;
         }
 
         throw new IOException("Unknown command '" + command + "'." + HINT);
+    }
+
+    /**
+     * Handles one compose-invoking command: with --print, prints the command
+     * and the summary on stdout; otherwise prints both on stderr (keeping
+     * stdout clean) and executes the command, propagating its exit code.
+     */
+    private void runCompose(Display display, Model model, String name, List<String> chain,
+            List<String> profiles, String action, Map<String, String> displayEnv, Plan plan)
+            throws Exception {
+        String commandLine = buildCommand(model, name, chain, profiles, action);
+        if (printOnly) {
+            display.command(commandLine);
+            display.summary(model, plan, displayEnv);
+            return;
+        }
+        Display err = new Display(display.printCredentials, System.err);
+        err.command(commandLine);
+        err.summary(model, plan, displayEnv);
+        int exitCode = new ProcessBuilder("sh", "-c", commandLine).inheritIO().start().waitFor();
+        if (exitCode != 0) {
+            System.exit(exitCode);
+        }
     }
 
     /**
@@ -310,13 +341,14 @@ public final class OzoneCli {
                 projectDescription = optionValue(args, ++i, arg);
             } else if ("--no-credentials".equals(arg)) {
                 printCredentials = false;
+            } else if ("--print".equals(arg)) {
+                printOnly = true;
             } else if (!arg.startsWith("--")) {
                 if (command == null) {
                     command = arg;
-                } else if (commandArg == null) {
-                    commandArg = arg;
                 } else {
-                    throw new IOException("Unexpected argument: " + arg);
+                    throw new IOException("Unexpected argument: " + arg + ". Commands take no arguments;"
+                            + " addons are enabled in the distro's ozone.yml, not passed to 'up'." + HINT);
                 }
             } else {
                 throw new IOException("Unknown option: " + arg + "." + HINT);
@@ -400,16 +432,16 @@ public final class OzoneCli {
         }
         lines.add("apps: [" + join(plan.apps) + "]");
         lines.add("integrations: [" + join(plan.integrations) + "]");
-        lines.add("modes: {" + joinModes(plan) + "}");
+        lines.add("addons: {" + joinAddons(plan) + "}");
         lines.add("db-init: [" + join(plan.dbInit) + "]");
         lines.add("");
-        lines.add("# The ordered -f chain for 'run'");
+        lines.add("# The ordered -f chain for 'up'");
         lines.add("compose-files:");
         for (String file : plan.chain) {
             lines.add("  - " + file);
         }
         lines.add("");
-        lines.add("# The pre-computed restore invocation: 'run' chain + these files,");
+        lines.add("# The pre-computed restore invocation: 'up' chain + these files,");
         lines.add("# with these restore gate profiles active");
         lines.add("restore:");
         lines.add("  compose-files:");
@@ -418,10 +450,11 @@ public final class OzoneCli {
         }
         lines.add("  profiles: [" + join(plan.restoreProfiles) + "]");
         lines.add("");
-        lines.add("# Ad-hoc chains: 'up <mode>' runs the base + the mode's files");
-        lines.add("mode-chains:");
-        for (Map.Entry<String, List<String>> modeChain : plan.modeChains.entrySet()) {
-            lines.add("  " + modeChain.getKey() + ": [" + join(modeChain.getValue()) + "]");
+        lines.add("# The ad-hoc chain the 'backup' command runs on a live stack");
+        lines.add("backup:");
+        lines.add("  compose-files:");
+        for (String file : plan.backupChain) {
+            lines.add("    - " + file);
         }
         Files.write(manifestFile.toPath(), lines, StandardCharsets.UTF_8);
     }
@@ -437,13 +470,13 @@ public final class OzoneCli {
         return sb.toString();
     }
 
-    private static String joinModes(Plan plan) {
+    private static String joinAddons(Plan plan) {
         StringBuilder sb = new StringBuilder();
-        for (Map.Entry<String, Boolean> mode : plan.modes.entrySet()) {
+        for (Map.Entry<String, Boolean> addon : plan.addons.entrySet()) {
             if (sb.length() > 0) {
                 sb.append(", ");
             }
-            sb.append(mode.getKey()).append(": ").append(mode.getValue());
+            sb.append(addon.getKey()).append(": ").append(addon.getValue());
         }
         return sb.toString();
     }

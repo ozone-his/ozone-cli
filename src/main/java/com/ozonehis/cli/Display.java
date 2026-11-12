@@ -1,6 +1,7 @@
 package com.ozonehis.cli;
 
 import java.io.File;
+import java.io.PrintStream;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -21,34 +22,41 @@ final class Display {
     /** All rules and note wrapping align to this fixed width. */
     private static final int RULE_WIDTH = 72;
 
-    private final boolean printCredentials;
+    final boolean printCredentials;
+    private final PrintStream out;
 
     Display(boolean printCredentials) {
+        this(printCredentials, System.out);
+    }
+
+    /** @param out where the display goes: stdout when printing, stderr when executing */
+    Display(boolean printCredentials, PrintStream out) {
         this.printCredentials = printCredentials;
+        this.out = out;
     }
 
     void validated(int chainSize) {
-        System.out.println("✓ Selection is valid - " + chainSize + " compose files on the chain.");
+        out.println("✓ Selection is valid - " + chainSize + " compose files on the chain.");
     }
 
     void command(String command) {
-        System.out.println();
-        System.out.println(rule("Command"));
-        System.out.println();
-        System.out.println(command);
-        System.out.println();
-        System.out.println(rule(null));
-        System.out.println();
+        out.println();
+        out.println(rule("Command"));
+        out.println();
+        out.println(command);
+        out.println();
+        out.println(rule(null));
+        out.println();
     }
 
     void artifactsWritten(String manifestPath, String envPath) {
-        System.out.println("✓ Manifest written: " + manifestPath);
-        System.out.println("✓ Env file written: " + envPath);
+        out.println("✓ Manifest written: " + manifestPath);
+        out.println("✓ Env file written: " + envPath);
     }
 
     void resolvedWritten(List<File> resolvedFiles) {
         for (File file : resolvedFiles) {
-            System.out.println("✓ Resolved file written: " + file);
+            out.println("✓ Resolved file written: " + file);
         }
     }
 
@@ -60,19 +68,13 @@ final class Display {
                 services.add(new String[] { appName, resolveTemplate(app.url, env) });
             }
         }
-        if (plan.ssoEnabled()) {
-            Model.Entry sso = model.modes.get("sso");
-            if (sso != null && sso.url != null) {
-                services.add(new String[] { "keycloak", resolveTemplate(sso.url, env) });
-            }
-        }
 
-        System.out.println("● Services");
+        out.println("● Services");
         int width = nameWidth(services);
         for (String[] service : services) {
-            System.out.println("  " + column(service[0], service[1], width));
+            out.println("  " + column(service[0], service[1], width));
         }
-        System.out.println();
+        out.println();
 
         if (!printCredentials) {
             return;
@@ -88,25 +90,25 @@ final class Display {
      * With SSO enabled the apps' declared credentials do not apply: logins
      * are Keycloak users. Only the Keycloak admin console credentials hold;
      * the rest must be created there, or is provisioned by the demo-data
-     * service from its users file.
+     * addon from its users file.
      */
     private void ssoCredentials(Model model, Plan plan, Map<String, String> env) {
-        System.out.println("🔑 Credentials - app logins are managed by Keycloak (SSO enabled)");
-        Model.Entry sso = model.modes.get("sso");
-        if (sso != null && !sso.credentials.isEmpty()) {
-            System.out.println("  ● " + column("keycloak", credentialValue(sso, env), "keycloak".length()));
+        out.println("🔑 Credentials - app logins are managed by Keycloak (SSO enabled)");
+        Model.Entry keycloak = model.apps.get(Plan.SSO_APP);
+        if (keycloak != null && !keycloak.credentials.isEmpty()) {
+            out.println("  ● " + column("keycloak", credentialValue(keycloak, env), "keycloak".length()));
         }
-        if (Boolean.TRUE.equals(plan.modes.get("demo-data"))) {
-            Model.Entry demoData = model.modes.get("demo-data");
+        if (Boolean.TRUE.equals(plan.addons.get("demo-data"))) {
+            Model.Entry demoData = model.addons.get("demo-data");
             if (demoData != null && demoData.ssoUsers != null) {
-                note("Demo users are provisioned by the demo-data service from: "
+                note("Demo users are provisioned by the demo-data addon from: "
                         + resolveTemplate(demoData.ssoUsers, env));
             }
         } else {
             note("No users are provisioned yet: create a user for each activated client in the"
                     + " Keycloak admin console.");
         }
-        System.out.println();
+        out.println();
     }
 
     private void defaultCredentials(Model model, Plan plan, Map<String, String> env) {
@@ -120,12 +122,12 @@ final class Display {
         if (credentials.isEmpty()) {
             return;
         }
-        System.out.println("🔑 Default credentials");
+        out.println("🔑 Default credentials");
         int width = nameWidth(credentials);
         for (String[] credential : credentials) {
-            System.out.println("  ● " + column(credential[0], credential[1], width));
+            out.println("  ● " + column(credential[0], credential[1], width));
         }
-        System.out.println();
+        out.println();
     }
 
     private String credentialValue(Model.Entry entry, Map<String, String> env) {
@@ -172,7 +174,7 @@ final class Display {
     }
 
     /** A note: wrapped to the rule width with a hanging indent. */
-    private static void note(String text) {
+    private void note(String text) {
         String prefix = "  ℹ ";
         StringBuilder line = new StringBuilder();
         int width = RULE_WIDTH - prefix.length();
@@ -180,14 +182,14 @@ final class Display {
             if (line.length() == 0) {
                 line.append(word);
             } else if (line.length() + 1 + word.length() > width) {
-                System.out.println(prefix + line);
+                out.println(prefix + line);
                 prefix = "    ";
                 line = new StringBuilder(word);
             } else {
                 line.append(' ').append(word);
             }
         }
-        System.out.println(prefix + line);
+        out.println(prefix + line);
     }
 
     private static int nameWidth(List<String[]> rows) {

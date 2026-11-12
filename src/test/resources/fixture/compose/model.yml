@@ -23,6 +23,14 @@ apps:
     compose: [apps/gamma.yml]
     db-init: [gamma]
     db: mysql
+  keycloak:
+    compose: [sso/keycloak.yml]
+    db-init: [keycloak]
+    db: postgresql
+    restore-compose: [sso/restore.yml]
+    restore-profiles: [keycloak-restore]
+    url: ${SERVER_SCHEME}://${KEYCLOAK_HOSTNAME}
+    credentials: [KEYCLOAK_USER, KEYCLOAK_PASSWORD]
 
 integrations:
   alpha-beta:
@@ -30,18 +38,14 @@ integrations:
     compose: [integrations/alpha-beta.yml]
     db: mysql
 
-modes:
-  sso:
-    compose: [sso/keycloak.yml]
-    db-init: [keycloak]
-    db: postgresql
-    restore-compose: [sso/restore.yml]
-    restore-profiles: [keycloak-restore]
-  backup:
-    compose: [support/backup.yml]
+addons:
   extra:
     compose: [support/extra.yml]
     sso: [sso/extra-sso.yml]
+
+operations:
+  backup:
+    compose: [support/backup.yml]
   restore:
     compose: [support/restore.yml, support/backup.yml]
 
