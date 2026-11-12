@@ -1,0 +1,16 @@
+target/
+dependency-reduced-pom.xml
+pom.xml.tag
+pom.xml.releaseBackup
+pom.xml.versionsBackup
+pom.xml.next
+release.properties
+buildNumber.properties
+.DS_Store
+.project
+.settings/
+.idea/
+.vscode/
+
+# Keep the Maven wrapper jar
+!/.mvn/wrapper/maven-wrapper.jar
