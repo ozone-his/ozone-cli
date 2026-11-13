@@ -86,8 +86,8 @@ final class EnvGen {
     /**
      * vars.yml owners: apps / integrations / addons / databases.
      * Each section holds named blocks (e.g. apps.openmrs), each block with
-     * configs / paths (always merged) and sso (merged only when SSO is
-     * enabled). A section may also carry configs / paths directly, e.g. the
+     * common / paths (always merged) and sso (merged only when SSO is
+     * enabled). A section may also carry common / paths directly, e.g. the
      * shared databases paths.
      */
     private void mergeOwnerBlocks(Map<String, String> env, Map<String, Object> vars, boolean override) {
@@ -96,7 +96,7 @@ final class EnvGen {
                 continue;
             }
             Map<String, Object> blocks = Yamls.map(section.getValue());
-            mergeSubBlock(env, blocks.get("configs"), override, false);
+            mergeSubBlock(env, blocks.get("common"), override, false);
             mergeSubBlock(env, blocks.get("paths"), override, true);
             for (Map.Entry<String, Object> block : blocks.entrySet()) {
                 if (block.getValue() instanceof Map) {
@@ -107,7 +107,7 @@ final class EnvGen {
     }
 
     private void mergeBlock(Map<String, String> env, Map<String, Object> fields, boolean override) {
-        mergeSubBlock(env, fields.get("configs"), override, false);
+        mergeSubBlock(env, fields.get("common"), override, false);
         mergeSubBlock(env, fields.get("paths"), override, true);
         if (ssoEnabled) {
             mergeSubBlock(env, fields.get("sso"), override, false);
@@ -131,7 +131,7 @@ final class EnvGen {
     }
 
     /**
-     * deployment_vars.yml: services.&lt;name&gt;.{hostnames,datadirs,configs}
+     * deployment section: services.&lt;name&gt;.{hostnames,datadirs,common}
      * and the extra block - all flattened, always overriding.
      */
     private void mergeDeploymentVars(Map<String, String> env, Map<String, Object> deploymentVars) {
@@ -139,7 +139,7 @@ final class EnvGen {
             Map<String, Object> block = Yamls.map(service.getValue());
             mergeSubBlock(env, block.get("hostnames"), true, false);
             mergeSubBlock(env, block.get("datadirs"), true, false);
-            mergeSubBlock(env, block.get("configs"), true, false);
+            mergeSubBlock(env, block.get("common"), true, false);
         }
         mergeSubBlock(env, deploymentVars.get("extra"), true, false);
     }

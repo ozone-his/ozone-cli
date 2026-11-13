@@ -1,12 +1,12 @@
 # Fixture code-level vars
 apps:
   alpha:
-    configs:
+    common:
       ALPHA_USER: alphauser
       ALPHA_PASSWORD: alphapass
       ALPHA_DB: alphadb
     sso:
       ALPHA_CLIENT_SECRET: code-level-secret
   keycloak:
-    configs:
+    common:
       KEYCLOAK_USER: kcadmin

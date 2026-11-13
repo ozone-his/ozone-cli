@@ -193,7 +193,7 @@ final class Model {
     }
 
     /**
-     * deployment section merge: services.&lt;name&gt;.{hostnames,datadirs,configs}
+     * deployment section merge: services.&lt;name&gt;.{hostnames,datadirs,common}
      * and the extra block - per var, the child-declared value wins.
      */
     private static void mergeDeployment(Map<String, Object> target, Map<String, Object> overlay) {

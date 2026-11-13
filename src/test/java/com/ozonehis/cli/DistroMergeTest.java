@@ -33,14 +33,14 @@ class DistroMergeTest {
     @Test
     void mergesParentResolvedWithOwnSections() throws IOException {
         write("parent/resolved/vars.yml",
-                "apps:\n  alpha:\n    configs:\n      ALPHA_PASSWORD: parent-pass\n      ALPHA_DB: alphadb\n");
+                "apps:\n  alpha:\n    common:\n      ALPHA_PASSWORD: parent-pass\n      ALPHA_DB: alphadb\n");
         write("child/ozone.yml",
-                "vars:\n  apps:\n    alpha:\n      configs:\n        ALPHA_PASSWORD: child-pass\n");
+                "vars:\n  apps:\n    alpha:\n      common:\n        ALPHA_PASSWORD: child-pass\n");
 
         DistroMerge.merge(new File(tempDir, "parent"), new File(tempDir, "child"));
 
         Map<String, Object> vars = loadResolved(new File(tempDir, "child"), "vars.yml");
-        Map<String, Object> alpha = Yamls.map(Yamls.map(Yamls.map(vars.get("apps")).get("alpha")).get("configs"));
+        Map<String, Object> alpha = Yamls.map(Yamls.map(Yamls.map(vars.get("apps")).get("alpha")).get("common"));
         assertEquals("child-pass", alpha.get("ALPHA_PASSWORD")); // own wins
         assertEquals("alphadb", alpha.get("ALPHA_DB"));           // parent value inherited
     }
@@ -48,25 +48,25 @@ class DistroMergeTest {
     @Test
     void inheritsParentFilesWhenNoOwnSections() throws IOException {
         write("parent/resolved/vars.yml",
-                "apps:\n  alpha:\n    configs:\n      ALPHA_PASSWORD: parent-pass\n");
+                "apps:\n  alpha:\n    common:\n      ALPHA_PASSWORD: parent-pass\n");
 
         DistroMerge.merge(new File(tempDir, "parent"), new File(tempDir, "child"));
 
         Map<String, Object> vars = loadResolved(new File(tempDir, "child"), "vars.yml");
         assertEquals("parent-pass",
-                Yamls.map(Yamls.map(Yamls.map(vars.get("apps")).get("alpha")).get("configs")).get("ALPHA_PASSWORD"));
+                Yamls.map(Yamls.map(Yamls.map(vars.get("apps")).get("alpha")).get("common")).get("ALPHA_PASSWORD"));
     }
 
     @Test
     void publishesOwnSectionsWhenNoParent() throws IOException {
         write("root/ozone.yml",
-                "vars:\n  apps:\n    alpha:\n      configs:\n        ALPHA_PASSWORD: root-pass\n");
+                "vars:\n  apps:\n    alpha:\n      common:\n        ALPHA_PASSWORD: root-pass\n");
 
         DistroMerge.merge(null, new File(tempDir, "root"));
 
         Map<String, Object> vars = loadResolved(new File(tempDir, "root"), "vars.yml");
         assertEquals("root-pass",
-                Yamls.map(Yamls.map(Yamls.map(vars.get("apps")).get("alpha")).get("configs")).get("ALPHA_PASSWORD"));
+                Yamls.map(Yamls.map(Yamls.map(vars.get("apps")).get("alpha")).get("common")).get("ALPHA_PASSWORD"));
     }
 
     @Test
@@ -103,9 +103,9 @@ class DistroMergeTest {
     @Test
     void mergeIsDeterministic() throws IOException {
         write("parent/resolved/vars.yml",
-                "apps:\n  alpha:\n    configs:\n      ALPHA_PASSWORD: parent-pass\n");
+                "apps:\n  alpha:\n    common:\n      ALPHA_PASSWORD: parent-pass\n");
         write("child/ozone.yml",
-                "vars:\n  apps:\n    alpha:\n      configs:\n        ALPHA_PASSWORD: child-pass\n");
+                "vars:\n  apps:\n    alpha:\n      common:\n        ALPHA_PASSWORD: child-pass\n");
 
         DistroMerge.merge(new File(tempDir, "parent"), new File(tempDir, "child"));
         byte[] first = Files.readAllBytes(new File(tempDir, "child/resolved/vars.yml").toPath());
@@ -144,7 +144,7 @@ class DistroMergeTest {
 
     @Test
     void yamlMergeRejectsTypeConflicts() throws IOException {
-        Map<String, Object> base = Yamls.load(write("base.yml", "apps:\n  alpha:\n    configs:\n      A: x\n"));
+        Map<String, Object> base = Yamls.load(write("base.yml", "apps:\n  alpha:\n    common:\n      A: x\n"));
         Map<String, Object> override = Yamls.load(write("override.yml", "apps:\n  alpha: scalar\n"));
         IOException e = assertThrows(IOException.class,
                 () -> YamlMerge.merge(base, override, "model-overrides.yml"));
@@ -153,7 +153,7 @@ class DistroMergeTest {
 
     @Test
     void recordsTheDistroIdentityWhenProvided() throws IOException {
-        write("root/ozone.yml", "vars:\n  apps:\n    alpha:\n      configs:\n        A: x\n");
+        write("root/ozone.yml", "vars:\n  apps:\n    alpha:\n      common:\n        A: x\n");
         Map<String, String> info = new java.util.LinkedHashMap<String, String>();
         info.put("name", "test-distro");
         info.put("version", "1.2.3");
@@ -169,7 +169,7 @@ class DistroMergeTest {
 
     @Test
     void writesNoInfoFileWithoutIdentity() throws IOException {
-        write("root/ozone.yml", "vars:\n  apps:\n    alpha:\n      configs:\n        A: x\n");
+        write("root/ozone.yml", "vars:\n  apps:\n    alpha:\n      common:\n        A: x\n");
         DistroMerge.merge(null, new File(tempDir, "root"));
         assertTrue(!new File(tempDir, "root/resolved/info.yml").isFile());
     }

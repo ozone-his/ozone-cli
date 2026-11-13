@@ -103,11 +103,11 @@ class EnvGenTest {
 
     @Test
     void doesNotFlattenNamedBlocksCollidingWithSubBlockNames() throws IOException {
-        // The named block apps.keycloak carries the Keycloak configs; its
-        // own keys must never leak into the .env as flattened 'configs'/'paths'
+        // The named block apps.keycloak carries the Keycloak common values; its
+        // own keys must never leak into the .env as flattened 'common'/'paths'
         // values.
         Map<String, String> env = generate(true);
-        assertFalse(env.containsKey("configs"));
+        assertFalse(env.containsKey("common"));
         assertFalse(env.containsKey("paths"));
         assertEquals("kcadmin", env.get("KEYCLOAK_USER")); // merged as a named block
     }

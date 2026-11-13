@@ -103,7 +103,11 @@ carries the code-level defaults:
   - `operations:` - run by dedicated commands, not toggled: `backup` (ad-hoc,
     on a live stack) and `restore` (one-off, run before `up`).
 - `vars.yml` - code-level variable defaults, in blocks mirroring the model
-  (apps / integrations / addons / operations / databases).
+  (apps / integrations / addons / operations / databases). Each block holds
+  sub-blocks: `common:` (plain values, always merged), `paths:` (distro-
+  relative, emitted as `${DISTRO_PATH}/...`), `sso:` (merged only when the
+  keycloak app is selected), `secrets:` (names only - values are never written
+  to the `.env` and must be provided from the environment at deploy time).
 
 ## Merge rules (`ozone resolve`)
 

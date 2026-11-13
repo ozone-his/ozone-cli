@@ -10,7 +10,7 @@ vars:
   # Fixture distro-level overrides
   apps:
     alpha:
-      configs:
+      common:
         ALPHA_PASSWORD: distro-pass
       paths:
         ALPHA_DATA_PATH: data
