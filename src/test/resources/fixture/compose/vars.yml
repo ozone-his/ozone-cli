@@ -7,6 +7,44 @@ apps:
       ALPHA_DB: alphadb
     sso:
       ALPHA_CLIENT_SECRET: code-level-secret
+  beta:
+    common:
+      BETA_VAR: betavar
+  gamma:
+    common:
+      GAMMA_VAR: gammavar
+      GAMMA_SECRET: gammasecret
+  delta:
+    common:
+      DELTA_VAR: deltavar
+    vars-from: [apps.gamma]
   keycloak:
     common:
       KEYCLOAK_USER: kcadmin
+      KEYCLOAK_PASSWORD: kcpass
+
+integrations:
+  alpha-beta:
+    common:
+      EIP_VAR: eipvar
+
+addons:
+  extra:
+    common:
+      ADDON_VAR: addonvar
+
+operations:
+  backup:
+    common:
+      BACKUP_VAR: backupvar
+
+restic:
+  common:
+    RESTIC_REPOSITORY: /restic_data
+    RESTIC_PASSWORD: resticpass
+
+databases:
+  mysql:
+    common:
+      MYSQL_MAX_CONNECTIONS: 500
+      MYSQL_ROOT_PASSWORD: rootpass

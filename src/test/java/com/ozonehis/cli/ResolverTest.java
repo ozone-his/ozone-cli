@@ -203,6 +203,19 @@ class ResolverTest {
     }
 
     @Test
+    void seedOwnersContainSelectedAppsActivatedIntegrationsAndEnabledAddons() throws IOException {
+        // The seeds for the .env filtering; the vars-from closure is computed
+        // by the EnvGen from the vars files (see EnvGenTest).
+        Plan plan = resolve(selection("  - alpha\n  - beta\n  - keycloak", "  extra: true"));
+        assertTrue(plan.owners.contains("apps.alpha"), plan.owners.toString());
+        assertTrue(plan.owners.contains("apps.beta"), plan.owners.toString());
+        assertTrue(plan.owners.contains("apps.keycloak"), plan.owners.toString());
+        assertTrue(plan.owners.contains("integrations.alpha-beta"), plan.owners.toString());
+        assertTrue(plan.owners.contains("addons.extra"), plan.owners.toString());
+        assertFalse(plan.owners.contains("apps.gamma"), plan.owners.toString());
+    }
+
+    @Test
     void rejectsUndeclaredComposePaths() throws IOException {
         IOException e = assertThrows(IOException.class, () ->
                 ComposePaths.resolve(composeRoot, distroDir, "nowhere.yml",

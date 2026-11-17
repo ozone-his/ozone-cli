@@ -23,6 +23,10 @@ apps:
     compose: [apps/gamma.yml]
     db-init: [gamma]
     db: mysql
+  # consumes gamma's vars block without selecting gamma (see its vars-from
+  # edge in vars.yml)
+  delta:
+    compose: [apps/delta.yml]
   keycloak:
     compose: [sso/keycloak.yml]
     db-init: [keycloak]

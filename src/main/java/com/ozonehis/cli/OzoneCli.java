@@ -11,6 +11,7 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 import javax.xml.parsers.DocumentBuilder;
 import javax.xml.parsers.DocumentBuilderFactory;
@@ -32,12 +33,19 @@ public final class OzoneCli {
 
     private static final String USAGE = "Usage: ozone resolve [--from <parent-distro-dir>] --to <distro-dir>\n"
             + "                    [--project-name <n>] [--project-version <v>] [--project-description <d>]\n"
-            + "       ozone --compose-root <dir> --distro <dir> [--hostname <h>]\n"
-            + "                    [--scheme <http|https>] [--env-file <path>] [--manifest <path>]\n"
-            + "                    [--no-credentials] [--print] <up | down | backup | restore | validate | manifest | info>\n"
+            + "       ozone --project <dir> [--hostname <h>]\n"
+            + "                    [--scheme <http|https>] [--no-credentials] [--print]\n"
+            + "                    <up | down | backup | restore | validate | manifest | info>\n"
+            + "       (override the derived layout: --compose-root <dir> --distro <dir>\n"
+            + "        [--env-file <path>] [--manifest <path>])\n"
             + "\n"
-            + "  --compose-root  required (except for resolve): the Docker Compose project location.\n"
-            + "  --distro        required (except for resolve): the distro location.\n"
+            + "  --project       the unpacked Ozone artifact dir; derives compose root = <dir>/run/docker,\n"
+            + "                  distro = <dir>/distro (DISTRO_PATH) and outputs (.env,\n"
+            + "                  manifest.yml) = <dir>/run/\n"
+            + "  --compose-root  the Docker Compose project location (default: <project>/run/docker).\n"
+            + "                  Required with --distro when --project is not used.\n"
+            + "  --distro        the distro location (default: <project>/distro). Required with\n"
+            + "                  --compose-root when --project is not used.\n"
             + "  --hostname      required for up/down/backup/restore/info: the deployment's hostname,\n"
             + "                  or the machine's IP for local runs (localhost breaks SSO,\n"
             + "                  e.g. on macOS). Not required for validate/manifest.\n"
@@ -62,11 +70,11 @@ public final class OzoneCli {
             + "                --project-description 'My distro'\n"
             + "\n"
             + "  # deployment - from an unpacked Ozone artifact:\n"
-            + "  ozone --compose-root run/docker --distro distro --hostname demo.local up\n"
-            + "  ozone --compose-root run/docker --distro distro --hostname demo.local up --print\n"
-            + "  ozone --compose-root run/docker --distro distro --hostname demo.local backup --print\n"
-            + "  ozone --compose-root run/docker --distro distro --hostname demo.local down\n"
-            + "  ozone --compose-root run/docker --distro distro --hostname demo.local info\n";
+            + "  ozone --project . --hostname demo.local up\n"
+            + "  ozone --project . --hostname demo.local up --print\n"
+            + "  ozone --project . --hostname demo.local backup --print\n"
+            + "  ozone --project . --hostname demo.local down\n"
+            + "  ozone --project . --hostname demo.local info\n";
 
     private static final String HELP = USAGE + EXAMPLES;
 
@@ -75,6 +83,8 @@ public final class OzoneCli {
 
     private File composeRoot;
     private File distroDir = new File(".");
+    private File projectDir;
+    private boolean distroSet;
     private String hostname;
     private String scheme = "https";
     private File envFile;
@@ -128,21 +138,30 @@ public final class OzoneCli {
             new Display(printCredentials).resolvedWritten(resolvedFiles);
             return;
         }
-        if (command == null || composeRoot == null) {
-            throw new IOException("Missing command or --compose-root." + HINT);
+        if (command == null || (composeRoot == null && projectDir == null)) {
+            throw new IOException("Missing command or --project (or --compose-root + --distro)." + HINT);
+        }
+        if (composeRoot == null) {
+            throw new IOException("Missing --compose-root (with --project it is derived as"
+                    + " <project>/run/docker)." + HINT);
         }
         distroDir = distroDir.getCanonicalFile();
+        // outDir comes from the path AS GIVEN (not canonicalized): run/docker may
+        // be a symlink, and canonicalizing would move the outputs to the link target.
+        File outDir = composeRoot.getParentFile() != null ? composeRoot.getParentFile() : distroDir;
         composeRoot = composeRoot.getCanonicalFile();
-        // Everything the Ozone CLI reads and writes lives at the distro root:
-        // the own declaration file ozone.yml, the build-generated resolved/
-        // files (the only vars and model source read at run time) and the
-        // generated .env and manifest.yml.
+        // The CLI reads at the distro root: the own declaration file ozone.yml
+        // and the build-generated resolved/ files (the only vars and model
+        // source read at run time). It writes instance state to run/ (see below).
         File ozoneYml = new File(distroDir, "ozone.yml");
+        // Generated deployment files are instance state, not distro input: they
+        // default to run/ (the compose root's parent in the standard artifact
+        // layout), never to the distro dir. DISTRO_PATH still points at distro/.
         if (envFile == null) {
-            envFile = new File(distroDir, ".env");
+            envFile = new File(outDir, ".env");
         }
         if (manifestFile == null) {
-            manifestFile = new File(distroDir, "manifest.yml");
+            manifestFile = new File(outDir, "manifest.yml");
         }
 
         if (!ozoneYml.isFile()) {
@@ -174,6 +193,9 @@ public final class OzoneCli {
         Plan plan = resolver.resolve();
         Display display = new Display(printCredentials);
 
+        EnvGen envGen = new EnvGen(plan.ssoEnabled(), plan.owners);
+        Map<String, String> env = buildEnv(model, plan, resolvedVars, envGen);
+
         if ("validate".equals(command)) {
             display.validated(plan.chain.size());
             return;
@@ -190,7 +212,6 @@ public final class OzoneCli {
                     + "SSO in some environments (e.g. macOS).");
         }
 
-        Map<String, String> env = buildEnv(model, plan, resolvedVars);
         // The .env keeps ${VAR} references raw so that invocation-provided
         // roots follow through every derived value; the resolved copy is for
         // display only. The roots are injected into the display copy (never
@@ -285,7 +306,7 @@ public final class OzoneCli {
         return artifactId(distroDir);
     }
 
-    private Map<String, String> buildEnv(Model model, Plan plan, File resolvedVars) throws IOException {
+    private Map<String, String> buildEnv(Model model, Plan plan, File resolvedVars, EnvGen envGen) throws IOException {
         StringBuilder dbInitList = new StringBuilder();
         for (String dir : plan.dbInit) {
             if (dbInitList.length() > 0) {
@@ -304,8 +325,8 @@ public final class OzoneCli {
         runtime.put("ENABLE_SSO", Boolean.toString(plan.ssoEnabled()));
         runtime.put("DB_INIT_LIST", dbInitList.toString());
 
-        EnvGen envGen = new EnvGen(plan.ssoEnabled());
-        return envGen.generate(new File(composeRoot, "vars.yml"),
+        EnvGen envGen2 = envGen;
+        return envGen2.generate(new File(composeRoot, "vars.yml"),
                 resolvedVars,
                 model.deployment,
                 runtime);
@@ -314,10 +335,13 @@ public final class OzoneCli {
     private void parse(String[] args) throws IOException {
         for (int i = 0; i < args.length; i++) {
             String arg = args[i];
-            if ("--compose-root".equals(arg)) {
+            if ("--project".equals(arg)) {
+                projectDir = new File(optionValue(args, ++i, arg));
+            } else if ("--compose-root".equals(arg)) {
                 composeRoot = new File(optionValue(args, ++i, arg));
             } else if ("--distro".equals(arg)) {
                 distroDir = new File(optionValue(args, ++i, arg));
+                distroSet = true;
             } else if ("--hostname".equals(arg)) {
                 hostname = optionValue(args, ++i, arg);
             } else if ("--scheme".equals(arg)) {
@@ -353,6 +377,36 @@ public final class OzoneCli {
             } else {
                 throw new IOException("Unknown option: " + arg + "." + HINT);
             }
+        }
+        deriveFromProject();
+    }
+
+    /**
+     * The standard artifact layout is fixed: <project>/run/docker (compose
+     * root), <project>/distro (distro), <project>/run (generated outputs).
+     * --project derives them; explicit --compose-root/--distro/--env-file/
+     * --manifest always win. Missing derived dirs are a loud error.
+     */
+    private void deriveFromProject() throws IOException {
+        if (projectDir == null) {
+            return;
+        }
+        File runDocker = new File(projectDir, "run/docker");
+        File distro = new File(projectDir, "distro");
+        if (!runDocker.isDirectory()) {
+            throw new IOException("--project " + projectDir + " has no run/docker dir (expected the"
+                    + " compose project at " + runDocker + "). Use --compose-root/--distro for a"
+                    + " non-standard layout." + HINT);
+        }
+        if (!distro.isDirectory()) {
+            throw new IOException("--project " + projectDir + " has no distro dir (expected"
+                    + " " + distro + "). Use --distro for a non-standard layout." + HINT);
+        }
+        if (composeRoot == null) {
+            composeRoot = runDocker;
+        }
+        if (!distroSet) {
+            distroDir = distro;
         }
     }
 

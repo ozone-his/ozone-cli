@@ -2,8 +2,10 @@ package com.ozonehis.cli;
 
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 /**
  * The resolved plan: what runs, the ordered compose chain, the db-init
@@ -19,6 +21,15 @@ final class Plan {
     final List<String> apps = new ArrayList<String>();
     final List<String> integrations = new ArrayList<String>();
     final Map<String, Boolean> addons = new LinkedHashMap<String, Boolean>();
+
+    /**
+     * The seed vars owners, section-qualified (e.g. "apps.openmrs"): the
+     * selected apps, the activated integrations and the enabled addons. The
+     * EnvGen expands this with the `vars-from` closure declared in the vars
+     * files and merges those blocks; the infrastructure sections (databases,
+     * operations, restic) are always merged, per the vars.yml header contract.
+     */
+    final Set<String> owners = new LinkedHashSet<String>();
 
     /** the ordered -f chain for `up` */
     final List<String> chain = new ArrayList<String>();

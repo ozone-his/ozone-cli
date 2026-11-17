@@ -16,7 +16,7 @@ command, which runs the exact `docker compose ...` command (or prints it with
 
 | Old mechanism | Old file | New equivalent |
 |---|---|---|
-| Start script | `scripts/start-ozone.sh` (run from `run/docker/scripts`) | `ozone --compose-root <run/docker> --distro <distro dir> --hostname <h> up` - runs the stack (add `--print` to only print the command) |
+| Start script | `scripts/start-ozone.sh` (run from `run/docker/scripts`) | `ozone --project <artifact dir> --hostname <h> up` - runs the stack (add `--print` to only print the command) |
 | Compose file list | `scripts/docker-compose-files.txt` | `ozone.yml` `selection:` section (apps + addons); the compose file chain and profiles are computed from the compose model |
 | Distro env vars | `scripts/distro-<name>.env`, merged into `concatenated.env` at build time | `ozone.yml` `vars:` section, merged over the parent's `resolved/vars.yml` at build time |
 | Compose override file | `scripts/docker-compose-<x>-overrides.yml`, appended to the `-f` chain | keep the file inside the distro and declare it in `ozone.yml` `model-overrides:` section (path relative to the distro dir); partial service tweaks (volumes, command, labels, extra env) stay in that compose file |
@@ -56,7 +56,7 @@ command, which runs the exact `docker compose ...` command (or prints it with
    the bundled launcher:
    `. ./bin/ozone-path.sh` (in fish: `source ./bin/ozone-path.fish`; or simply
    `export PATH="$PWD/bin:$PATH"`), then
-   `ozone --compose-root run/docker --distro distro --hostname <host> up`
+   `ozone --project . --hostname <host> up`
    (add `--print` to only print the multi-line command and paste it yourself).
    (`java -jar bin/cli.jar ...` works too.) `HOST_NAME` and `DISTRO_PATH` are
    provided by that command, never stored in files. Use `info` to re-print the

@@ -135,6 +135,19 @@ final class Resolver {
             checkFilesExist(plan.backupChain);
         }
 
+        // The seed vars owners for the .env: selected apps, activated
+        // integrations, enabled addons. The EnvGen expands this set with the
+        // `vars-from` closure declared in the vars files (see EnvGen).
+        for (String appName : selection.apps) {
+            plan.owners.add("apps." + appName);
+        }
+        for (String integrationName : plan.integrations) {
+            plan.owners.add("integrations." + integrationName);
+        }
+        for (String addonName : enabledAddonsOnly()) {
+            plan.owners.add("addons." + addonName);
+        }
+
         return plan;
     }
 

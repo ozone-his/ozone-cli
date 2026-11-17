@@ -30,13 +30,20 @@ classes in `com.ozonehis.cli`:
   applies the distro's `model-overrides.yml` (additive only).
 - `Selection` - parses `ozone.yml` `selection:` section (apps list + addons map).
 - `Resolver` - computes the compose-file chain and profiles from model +
-  selection + resolved overlay.
+  selection + resolved overlay, and the seed `owners` set (section-qualified,
+  e.g. `apps.openmrs`): selected apps, activated integrations, enabled addons.
 - `Plan` - the resolved deployment plan (apps, addons, chain, restore and
-  backup invocations).
+  backup invocations, `owners`).
 - `EnvGen` - builds the `.env`. Merge order (later wins): code-level
   `vars.yml` -> distro `resolved/vars.yml` -> the model's
-  `deployment:` section. The `.env` is portable: `HOST_NAME`/`DISTRO_PATH`
-  are never stored in it.
+  `deployment:` section. Owner blocks under `apps:`/`integrations:`/`addons:`
+  are merged only when the included-owners set contains them; that set is the
+  plan's seeds expanded by the transitive `vars-from` closure declared in the
+  vars files (block-level list of section-qualified names, edges from both
+  vars sources combined; unknown target or cycle = loud error). All other
+  sections (databases, operations, restic, section-level common/paths) are
+  always merged, as is the whole `deployment:` section. The `.env` is
+  portable: `HOST_NAME`/`DISTRO_PATH` are never stored in it.
 - `DistroMerge` - the `resolve` command: merges parent `resolved/` with the own
   `ozone.yml` sections (`vars:`, `model-overrides:`) into `resolved/`
   (`MERGED_FILES = {vars.yml, model-overrides.yml}`) and records `info.yml` from `--project-*`.
@@ -58,10 +65,19 @@ classes in `com.ozonehis.cli`:
   parse strings to infer intent. Anything ambiguous -> fail loudly. Errors are
   `IOException`s prefixed `ozone: ` with an actionable message (often citing
   the command to run, e.g. `ozone resolve --to <distro-dir>`).
+- **Approval rules (strict, session-level).** Do not write code or modify any
+  file without the user's explicit approval - describe the planned changes
+  first and wait. Do not commit anything without the user's explicit approval.
+  Reading, searching and running tests/builds are always fine.
 - Booleans: anything other than `true` (incl. `false`, empty) is false.
-- Nothing is generated in source trees. `resolved/`, `.env` (distro root),
-  `manifest.yml` (distro root) exist only in built artifacts / at deployment
-  (gitignored at the repo root: `distro/{resolved/,.env,manifest.yml}`).
+- YAML style in `vars.yml`/`ozone.yml`: one var per line; lists use block
+  style, inline `[...]` only for lists of 1-2 items. Long single-line scalar
+  values (comma-separated lists like ODOO_ADDONS) must stay on one line -
+  YAML folding would corrupt them.
+- Nothing is generated in source trees. `resolved/` (in `distro/`) is generated at
+  build time; `.env` and `manifest.yml` (in `run/`, the compose root's
+  parent) are generated at deployment. All are gitignored and exist only in built
+  artifacts / at deployment.
 - Merge semantics (YamlMerge): maps recurse, lists append, scalars
   child-wins, type conflicts = loud error. The `selection:` section is NOT
   merged - it replaces the parent's wholesale via the build-time file copy.
@@ -102,6 +118,10 @@ java -jar target/cli-1.0.0-SNAPSHOT.jar \
   --compose-root src/test/resources/fixture/compose \
   --distro src/test/resources/fixture/distro --hostname demo.local validate
 ```
+
+Runtime commands take `--project <artifact-dir>` (derives `run/docker`, `distro/`,
+outputs in `run/`); `--compose-root`/`--distro` remain as explicit overrides for
+non-standard layouts like the test fixtures.
 
 Fixtures live in `src/test/resources/fixture/{compose,distro}`; tests in
 `src/test/java/com/ozonehis/cli/` (`DistroMergeTest`, `ResolverTest`,
