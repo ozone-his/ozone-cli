@@ -33,22 +33,19 @@ public final class OzoneCli {
 
     private static final String USAGE = "Usage: ozone resolve [--from <parent-distro-dir>] --to <distro-dir>\n"
             + "                    [--project-name <n>] [--project-version <v>] [--project-description <d>]\n"
-            + "       ozone --project <dir> [--hostname <h>]\n"
+            + "       ozone [--project <dir>] [--hostname <h>]\n"
             + "                    [--scheme <http|https>] [--no-credentials] [--print]\n"
             + "                    <up | down | backup | restore | validate | manifest | info>\n"
             + "       (override the derived layout: --compose-root <dir> --distro <dir>\n"
             + "        [--env-file <path>] [--manifest <path>])\n"
             + "\n"
-            + "  --project       the unpacked Ozone artifact dir; derives compose root = <dir>/run/docker,\n"
-            + "                  distro = <dir>/distro (DISTRO_PATH) and outputs (.env,\n"
-            + "                  manifest.yml) = <dir>/run/\n"
+            + "  --project       the unpacked Ozone artifact dir (default: the current directory);\n"
+            + "                  derives compose root = <dir>/run/docker, distro = <dir>/distro\n"
+            + "                  (DISTRO_PATH) and outputs (.env, manifest.yml) = <dir>/run/\n"
             + "  --compose-root  the Docker Compose project location (default: <project>/run/docker).\n"
-            + "                  Required with --distro when --project is not used.\n"
-            + "  --distro        the distro location (default: <project>/distro). Required with\n"
-            + "                  --compose-root when --project is not used.\n"
-            + "  --hostname      required for up/down/backup/restore/info: the deployment's hostname,\n"
-            + "                  or the machine's IP for local runs (localhost breaks SSO,\n"
-            + "                  e.g. on macOS). Not required for validate/manifest.\n"
+            + "  --distro        the distro location (default: <project>/distro, or the current\n"
+            + "                  directory when --project is not used).\n"
+            + "  --hostname      the deployment's hostname (default: localhost)\n"
             + "  --print         only print the compose command instead of running it\n\n"
             + "  resolve        build step: resolve the parent distro's resolved files with\n"
             + "                 this distro's own ozone.yml sections into resolved/,\n"
@@ -69,12 +66,13 @@ public final class OzoneCli {
             + "                --project-name my-distro --project-version 1.0.0-SNAPSHOT \\\n"
             + "                --project-description 'My distro'\n"
             + "\n"
-            + "  # deployment - from an unpacked Ozone artifact:\n"
-            + "  ozone --project . --hostname demo.local up\n"
-            + "  ozone --project . --hostname demo.local up --print\n"
-            + "  ozone --project . --hostname demo.local backup --print\n"
-            + "  ozone --project . --hostname demo.local down\n"
-            + "  ozone --project . --hostname demo.local info\n";
+            + "  # deployment - from an unpacked Ozone artifact root (--project defaults\n"
+            + "  # to the current directory, --hostname to localhost):\n"
+            + "  ozone --hostname demo.local up\n"
+            + "  ozone up --print\n"
+            + "  ozone backup --print\n"
+            + "  ozone down\n"
+            + "  ozone info\n";
 
     private static final String HELP = USAGE + EXAMPLES;
 
@@ -84,8 +82,12 @@ public final class OzoneCli {
     private File composeRoot;
     private File distroDir = new File(".");
     private File projectDir;
+    private boolean projectSet;
     private boolean distroSet;
-    private String hostname;
+    private String hostname = "localhost";
+    private boolean hostnameSet;
+    /** Step/diagnostic logs always go to stderr, keeping stdout for command output. */
+    private final Display log = new Display(true, System.err);
     private String scheme = "https";
     private File envFile;
     private File manifestFile;
@@ -102,7 +104,9 @@ public final class OzoneCli {
         try {
             // Always emit UTF-8: the display's glyphs and dashes render as
             // correct bytes regardless of the platform's default charset.
+            // Step logs go to stderr, so both streams need the explicit charset.
             System.setOut(new PrintStream(new FileOutputStream(FileDescriptor.out), true, "UTF-8"));
+            System.setErr(new PrintStream(new FileOutputStream(FileDescriptor.err), true, "UTF-8"));
             new OzoneCli().run(args);
         } catch (Exception e) {
             System.err.println("ozone: " + e.getMessage());
@@ -144,6 +148,9 @@ public final class OzoneCli {
         if (composeRoot == null) {
             throw new IOException("Missing --compose-root (with --project it is derived as"
                     + " <project>/run/docker)." + HINT);
+        }
+        if (!hostnameSet) {
+            log.log("No --hostname given - using 'localhost'");
         }
         distroDir = distroDir.getCanonicalFile();
         // outDir comes from the path AS GIVEN (not canonicalized): run/docker may
@@ -191,6 +198,15 @@ public final class OzoneCli {
         Selection selection = Selection.load(ozoneYml);
         Resolver resolver = new Resolver(model, selection, composeRoot, distroDir);
         Plan plan = resolver.resolve();
+        int addonsEnabled = 0;
+        for (Boolean enabled : plan.addons.values()) {
+            if (Boolean.TRUE.equals(enabled)) {
+                addonsEnabled++;
+            }
+        }
+        log.log("Selection resolved: " + plan.apps.size() + " apps, " + plan.integrations.size()
+                + " integrations, " + addonsEnabled + " addons enabled - " + plan.chain.size()
+                + " compose files on the chain");
         Display display = new Display(printCredentials);
 
         EnvGen envGen = new EnvGen(plan.ssoEnabled(), plan.owners);
@@ -201,26 +217,13 @@ public final class OzoneCli {
             return;
         }
 
-        // HOST_NAME and DISTRO_PATH are provided by the invocation only -
-        // never stored in the portable .env. Refuse the commands that
-        // actually touch the stack unless the hostname is known.
-        if (hostname == null && ("up".equals(command) || "down".equals(command)
-                || "backup".equals(command) || "restore".equals(command)
-                || "info".equals(command))) {
-            throw new IOException("--hostname is required for '" + command + "'. Use the deployment's\n"
-                    + "hostname, or your machine's IP for local runs; 'localhost' does not work for\n"
-                    + "SSO in some environments (e.g. macOS).");
-        }
-
         // The .env keeps ${VAR} references raw so that invocation-provided
         // roots follow through every derived value; the resolved copy is for
         // display only. The roots are injected into the display copy (never
         // the .env) so ${HOST_NAME}/${DISTRO_PATH} templates resolve for
         // printing.
         Map<String, String> displayEnv = new LinkedHashMap<String, String>(env);
-        if (hostname != null) {
-            displayEnv.put("HOST_NAME", hostname);
-        }
+        displayEnv.put("HOST_NAME", hostname);
         displayEnv.put("DISTRO_PATH", distroDir.getCanonicalPath());
         displayEnv = EnvGen.substitute(displayEnv);
 
@@ -237,6 +240,8 @@ public final class OzoneCli {
             display.artifactsWritten(manifestFile.getCanonicalPath(), envFile.getCanonicalPath());
             return;
         }
+        log.log("Manifest written: " + manifestFile.getCanonicalPath());
+        log.log("Env file written: " + envFile.getCanonicalPath());
 
         // The command is ephemeral and necessarily machine-specific
         // (it points at this machine's compose tree); generated artifacts
@@ -292,6 +297,7 @@ public final class OzoneCli {
         if (exitCode != 0) {
             System.exit(exitCode);
         }
+        log.log("Command finished (exit 0)");
     }
 
     /**
@@ -337,6 +343,7 @@ public final class OzoneCli {
             String arg = args[i];
             if ("--project".equals(arg)) {
                 projectDir = new File(optionValue(args, ++i, arg));
+                projectSet = true;
             } else if ("--compose-root".equals(arg)) {
                 composeRoot = new File(optionValue(args, ++i, arg));
             } else if ("--distro".equals(arg)) {
@@ -344,6 +351,7 @@ public final class OzoneCli {
                 distroSet = true;
             } else if ("--hostname".equals(arg)) {
                 hostname = optionValue(args, ++i, arg);
+                hostnameSet = true;
             } else if ("--scheme".equals(arg)) {
                 scheme = optionValue(args, ++i, arg);
                 if (!"http".equals(scheme) && !"https".equals(scheme)) {
@@ -384,10 +392,15 @@ public final class OzoneCli {
     /**
      * The standard artifact layout is fixed: <project>/run/docker (compose
      * root), <project>/distro (distro), <project>/run (generated outputs).
-     * --project derives them; explicit --compose-root/--distro/--env-file/
-     * --manifest always win. Missing derived dirs are a loud error.
+     * --project derives them (default: the current directory); explicit
+     * --compose-root/--distro/--env-file/--manifest always win. Missing
+     * derived dirs are a loud error.
      */
     private void deriveFromProject() throws IOException {
+        if (projectDir == null && composeRoot == null && !"resolve".equals(command)) {
+            projectDir = new File(".");
+            log.log("No --project given - using the current directory: " + projectDir.getCanonicalPath());
+        }
         if (projectDir == null) {
             return;
         }

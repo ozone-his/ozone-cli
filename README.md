@@ -159,12 +159,13 @@ ozone --project ...       # uses target/cli-*.jar, this session only
 ozone resolve [--from <parent-distro-dir>] --to <distro-dir>
               [--project-name <n>] [--project-version <v>] [--project-description <d>]
 
-ozone --project <dir> [--hostname <h>]
+ozone [--project <dir>] [--hostname <h>]
       [--scheme <http|https>] [--no-credentials] [--print]
       <up | down | backup | restore | validate | manifest | info>
 ```
 
-`--project` is the unpacked Ozone artifact dir; it derives the standard layout:
+`--project` is the unpacked Ozone artifact dir (default: the current directory);
+it derives the standard layout:
 compose root = `<dir>/run/docker`, distro = `<dir>/distro` (DISTRO_PATH), generated
 outputs (`.env`, `manifest.yml`) = `<dir>/run/`. For a non-standard
 layout, use `--compose-root <dir> --distro <dir>` (plus optional `--env-file` /
@@ -183,15 +184,17 @@ layout, use `--compose-root <dir> --distro <dir>` (plus optional `--env-file` /
   other command regenerates them too). `info` only prints the services and
   credentials summary. All of these read `resolved/` + the `ozone.yml`
   `selection:` section only.
-- `--project` - the unpacked Ozone artifact dir; derives `run/docker` (compose root),
-  `distro/` and `run/` (outputs). The common case: `ozone --project . --hostname demo.local up`.
-- `--compose-root` / `--distro` - explicit overrides for non-standard layouts
-  (without `--project`, both are required).
-- `--hostname` - required for `up`/`down`/`backup`/`restore`/`info`: the
-  deployment's hostname, or the machine's IP for local runs (localhost breaks
-  SSO, e.g. on macOS).
+- `--project` - the unpacked Ozone artifact dir (default: the current directory);
+  derives `run/docker` (compose root), `distro/` and `run/` (outputs). The common
+  case, from the artifact root: `ozone --hostname demo.local up`.
+- `--compose-root` / `--distro` - explicit overrides for non-standard layouts;
+  explicit flags always win over the derived ones.
+- `--hostname` - the deployment's hostname (default: `localhost`).
 - `--print` - print the compose command instead of running it; the summary is
-  printed on stderr when running, on stdout when printing.
+  printed on stderr when running, on stdout when printing. Step and default
+  logs (applied defaults, resolved selection, written artifacts, exit status)
+  are plain lines without glyphs and always go to stderr; the glyphs
+  (✓ ● 🔑 ℹ) mark only the final result output.
 
 The command is printed multi-line, fenced between rules, byte-exact for
 copy/paste (with `--print`; when running, it goes to stderr and the command
@@ -222,14 +225,15 @@ ozone resolve --from target/ozone/distro --to target/my-distro-1.0.0-SNAPSHOT/di
               --project-description 'My distro'
 ```
 
-Deployment - from an unpacked Ozone artifact:
+Deployment - from an unpacked Ozone artifact root (`--project` defaults to the
+current directory, `--hostname` to `localhost`):
 
 ```
-ozone --project . --hostname demo.local up
-ozone --project . --hostname demo.local up --print
-ozone --project . --hostname demo.local backup --print
-ozone --project . --hostname demo.local down
-ozone --project . --hostname demo.local info
+ozone --hostname demo.local up
+ozone up --print
+ozone --hostname demo.local backup --print
+ozone down
+ozone info
 ```
 
 ## Build wiring (Maven)

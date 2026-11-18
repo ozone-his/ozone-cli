@@ -13,9 +13,11 @@ import java.util.Map;
  * independently.
  *
  * The glyphs carry fixed meanings: ✓ a confirmation, ● a row of the
- * deployment, 🔑 the credentials section, ℹ an informational note. The
- * printed command itself is never decorated: it is fenced between rules so
- * it stands out and stays byte-exact for copy/paste and extraction.
+ * deployment, 🔑 the credentials section, ℹ an informational note. Glyphs
+ * mark only the final result output (confirmations, the services/credentials
+ * summary); tool logs are plain lines via log(String). The printed command
+ * itself is never decorated: it is fenced between rules so it stands out
+ * and stays byte-exact for copy/paste and extraction.
  */
 final class Display {
 
@@ -37,6 +39,11 @@ final class Display {
 
     void validated(int chainSize) {
         out.println("✓ Selection is valid - " + chainSize + " compose files on the chain.");
+    }
+
+    /** A tool log line: plain text, no glyph - logs are not result output. */
+    void log(String text) {
+        out.println(text);
     }
 
     void command(String command) {
@@ -174,7 +181,7 @@ final class Display {
     }
 
     /** A note: wrapped to the rule width with a hanging indent. */
-    private void note(String text) {
+    void note(String text) {
         String prefix = "  ℹ ";
         StringBuilder line = new StringBuilder();
         int width = RULE_WIDTH - prefix.length();

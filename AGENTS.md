@@ -52,12 +52,18 @@ classes in `com.ozonehis.cli`:
   files against the compose root, overlay-declared files against the distro
   dir. An overlay naming a base-model file is a loud error.
 - `Display` - all console output. Glyphs have fixed meanings: ✓ confirmation,
-  ● a row, 🔑 credentials, ℹ note. Rules/notes align to `RULE_WIDTH = 72`. The
+  ● a row, 🔑 credentials, ℹ note - and mark only the final result output
+  (validate/manifest/resolve confirmations, the fenced command, services,
+  credentials). Tool logs (applied defaults, resolved selection, written
+  artifacts, exit status) are plain lines via `Display.log`, no glyph.
+  Rules/notes align to `RULE_WIDTH = 72`. The
   printed compose command is fenced between rules and must stay byte-exact
   (multi-line, one continuation line per prefix assignment - this format is
   intentional; do not "tidy" it). `up`/`down`/`backup`/`restore` execute the
   command by default (summary + command go to stderr, exit code is propagated);
   `--print` prints them on stdout instead. `info` prints only the summary.
+  Step/diagnostic logs always go to stderr via a dedicated `Display`, keeping
+  stdout for `--print` output.
 
 ## Core principles
 
@@ -69,6 +75,7 @@ classes in `com.ozonehis.cli`:
   file without the user's explicit approval - describe the planned changes
   first and wait. Do not commit anything without the user's explicit approval.
   Reading, searching and running tests/builds are always fine.
+- -do not code anything without explicit approval from me)
 - Booleans: anything other than `true` (incl. `false`, empty) is false.
 - YAML style in `vars.yml`/`ozone.yml`: one var per line; lists use block
   style, inline `[...]` only for lists of 1-2 items. Long single-line scalar
@@ -119,8 +126,9 @@ java -jar target/cli-1.0.0-SNAPSHOT.jar \
   --distro src/test/resources/fixture/distro --hostname demo.local validate
 ```
 
-Runtime commands take `--project <artifact-dir>` (derives `run/docker`, `distro/`,
-outputs in `run/`); `--compose-root`/`--distro` remain as explicit overrides for
+Runtime commands take `--project <artifact-dir>` (default: the current directory;
+derives `run/docker`, `distro/`, outputs in `run/`; `--hostname` defaults to
+`localhost`); `--compose-root`/`--distro` remain as explicit overrides for
 non-standard layouts like the test fixtures.
 
 Fixtures live in `src/test/resources/fixture/{compose,distro}`; tests in
